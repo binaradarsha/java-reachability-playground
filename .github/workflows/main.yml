@@ -233,7 +233,22 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "🤖 Asking Copilot to generate fixes..."
-          echo "GITHUB_TOKEN: $GITHUB_TOKEN, GH_TOKEN: $GH_TOKEN"
+          echo "GITHUB_TOKEN length: ${#GITHUB_TOKEN}, GH_TOKEN length: ${#GH_TOKEN}"
+          echo "GITHUB_TOKEN starts with: ${GITHUB_TOKEN:0:7}..."
+          echo "GH_TOKEN starts with: ${GH_TOKEN:0:7}..."
+          
+          # Check if tokens are properly set
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "❌ GITHUB_TOKEN is empty or not set"
+          else
+            echo "✅ GITHUB_TOKEN is set"
+          fi
+          
+          if [ -z "$GH_TOKEN" ]; then
+            echo "❌ GH_TOKEN is empty or not set"
+          else
+            echo "✅ GH_TOKEN is set"
+          fi
 
           # Use Copilot to generate fixes
           FIX_PROMPT=$(cat fix_prompt.txt)
