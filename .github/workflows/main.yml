@@ -130,9 +130,9 @@ jobs:
           4. Suggest remediation actions for each vulnerability
           5. Format the results in a structured JSON format
           
-          Save the complete scan results."
+          Save only first scan result."
           
-          # For now, run Snyk CLI directly to get results
+          # For now, run Snyk CLI directly to get first result
           # Once Copilot MCP integration is fully working, this will be replaced
           echo "Running Snyk scans..."
           
