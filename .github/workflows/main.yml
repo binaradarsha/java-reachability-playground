@@ -191,7 +191,7 @@ jobs:
           $VULN_REPORT
 
           INSTRUCTIONS:
-          1. Analyze each vulnerability carefully
+          1. Analyze the first vulnerability carefully
           2. For dependency vulnerabilities:
              - Update package versions to secure versions
              - Update package.json, requirements.txt, go.mod, or relevant dependency files
