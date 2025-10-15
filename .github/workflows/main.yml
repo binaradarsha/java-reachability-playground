@@ -233,7 +233,8 @@ jobs:
         #   GH_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "🤖 Asking Copilot to generate fixes..."
-          
+          echo "secrets.PAT: ${{ secrets.PAT }}"
+
           # Use Copilot to generate fixes
           FIX_PROMPT=$(cat fix_prompt.txt)
           
