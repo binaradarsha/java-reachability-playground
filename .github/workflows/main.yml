@@ -251,11 +251,12 @@ jobs:
             echo "✅ GH_TOKEN is set"
           fi
 
-          # Use Copilot to generate fixes
+          # Use Copilot to generate fixes (non-interactive mode)
           FIX_PROMPT=$(cat fix_prompt.txt)
           
-          # Get Copilot's suggestions for fixes
-          echo "$FIX_PROMPT" | gh copilot suggest -t shell > fix_commands.txt
+          # Get Copilot's suggestions for fixes using non-interactive mode
+          # Using 'yes' to automatically answer any prompts
+          yes "" | gh copilot suggest -t shell "$FIX_PROMPT" > fix_commands.txt 2>&1 || true
           
           echo "📝 Generated fix commands:"
           cat fix_commands.txt
