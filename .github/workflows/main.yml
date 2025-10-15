@@ -124,7 +124,7 @@ jobs:
           - snyk_iac_scan: Scan infrastructure-as-code configurations
           
           Please scan the current directory and:
-          1. Identify all security vulnerabilities with severity levels, but take only the first three highest severity ones
+          1. Identify all security vulnerabilities with severity levels, but consider only first three lowest severity ones for the below steps and final output.
           2. List affected packages and their current versions
           3. Provide CVE identifiers where available
           4. Suggest remediation actions for each vulnerability
