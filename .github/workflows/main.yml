@@ -101,8 +101,7 @@ jobs:
 
       - name: Authenticate GitHub CLI for Copilot
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "${{ secrets.PAT }}" | gh auth login --with-token
           gh auth status
@@ -230,9 +229,8 @@ jobs:
       - name: Apply Fixes with Copilot
         if: steps.security_scan.outputs.vulnerabilities_found == 'true'
         env:
-          # GITHUB_TOKEN: ${{ steps.pr-app-token.outputs.token }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "🤖 Asking Copilot to generate fixes..."
           
@@ -288,8 +286,8 @@ jobs:
       - name: Create Pull Request
         if: env.changes_committed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           # Generate PR description with Copilot
           PR_DESCRIPTION=$(cat <<EOF
@@ -363,8 +361,8 @@ jobs:
       - name: Comment on Commit (if no vulnerabilities)
         if: steps.security_scan.outputs.vulnerabilities_found == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           gh api \
             --method POST \
