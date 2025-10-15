@@ -228,12 +228,12 @@ jobs:
 
       - name: Apply Fixes with Copilot
         if: steps.security_scan.outputs.vulnerabilities_found == 'true'
-        # env:
-        #   GITHUB_TOKEN: ${{ secrets.PAT }}
-        #   GH_TOKEN: ${{ secrets.PAT }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "🤖 Asking Copilot to generate fixes..."
-          echo "secrets.PAT: ${{ secrets.PAT }}"
+          echo "GITHUB_TOKEN: $GITHUB_TOKEN, GH_TOKEN: $GH_TOKEN"
 
           # Use Copilot to generate fixes
           FIX_PROMPT=$(cat fix_prompt.txt)
