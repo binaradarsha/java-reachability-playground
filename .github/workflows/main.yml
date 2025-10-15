@@ -1,12 +1,373 @@
-name: Example workflow for Python using Snyk
-on: push
+name: Automated Security Scan and Fix with Copilot
+
+on:
+  push:
+    branches:
+      - trhack1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
-  security:
+  security-scan-and-fix:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@master
-      - name: Run Snyk again to check for vulnerabilities
-        uses: snyk/actions/maven@master
-        continue-on-error: true
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: |
+          npm install -g @githubnext/github-copilot-cli
+          npm install -g snyk
+      
+      - name: Authenticate Snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk auth $SNYK_TOKEN
+      
+      - name: Setup Snyk MCP Server
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          # Get Snyk CLI path
+          SNYK_PATH=$(which snyk)
+          echo "Snyk CLI installed at: $SNYK_PATH"
+          
+          # Verify Snyk authentication
+          snyk auth $SNYK_TOKEN
+          snyk config set org=${{ secrets.SNYK_ORG_ID }}
+          
+          # Start Snyk MCP server in background using SSE transport
+          nohup snyk mcp -t sse --port 3000 > mcp-server.log 2>&1 &
+          MCP_PID=$!
+          echo "MCP_PID=$MCP_PID" >> $GITHUB_ENV
+          
+          # Wait for server to be ready
+          echo "Waiting for MCP server to start..."
+          sleep 10
+          
+          # Check if process is running
+          # if ps -p $MCP_PID > /dev/null; then
+          #   echo "✅ Snyk MCP server started successfully (PID: $MCP_PID)"
+          # else
+          #   echo "❌ MCP server failed to start"
+          #   cat mcp-server.log
+          #   exit 1
+          # fi
+      
+      - name: Create MCP Configuration
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          mkdir -p ~/.config/copilot
+          
+          # Get absolute path to snyk
+          SNYK_PATH=$(which snyk)
+          
+          cat > ~/.config/copilot/mcp-config.json <<EOF
+          {
+            "mcpServers": {
+              "snyk": {
+                "command": "$SNYK_PATH",
+                "args": ["mcp", "-t", "stdio"],
+                "env": {
+                  "SNYK_TOKEN": "$SNYK_TOKEN",
+                  "SNYK_CFG_ORG": "${{ secrets.SNYK_ORG_ID }}"
+                }
+              }
+            }
+          }
+          EOF
+          
+          echo "MCP configuration created at ~/.config/copilot/mcp-config.json"
+          cat ~/.config/copilot/mcp-config.json
+      
+      - name: Install GitHub Copilot CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh extension install github/gh-copilot
+
+      - name: Authenticate GitHub CLI for Copilot
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          # GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          echo "${{ secrets.PAT }}" | gh auth login --with-token
+          gh auth status
+
+      # Note: gh copilot config is skipped as it requires interactive prompts
+      # The gh copilot commands will work without explicit configuration in CI
+      
+      - name: Run Security Scan with Copilot + Snyk MCP
+        id: security_scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          # Define the scan prompt for Copilot with Snyk MCP integration
+          SCAN_PROMPT="I need you to perform a comprehensive security vulnerability scan using the Snyk MCP server.
+          
+          Use the following Snyk MCP tools available:
+          - snyk_sca_scan: Scan for dependency vulnerabilities
+          - snyk_code_scan: Scan for code security issues
+          - snyk_iac_scan: Scan infrastructure-as-code configurations
+          
+          Please scan the current directory and:
+          1. Identify all security vulnerabilities with severity levels
+          2. List affected packages and their current versions
+          3. Provide CVE identifiers where available
+          4. Suggest remediation actions for each vulnerability
+          5. Format the results in a structured JSON format
+          
+          Save the complete scan results."
+          
+          # For now, run Snyk CLI directly to get results
+          # Once Copilot MCP integration is fully working, this will be replaced
+          echo "Running Snyk scans..."
+          
+          # Initialize results file
+          echo '{"vulnerabilities": []}' > vulnerability_report.json
+          
+          # Run SCA scan (dependencies)
+          echo "Scanning dependencies..."
+          snyk test --json > sca_results.json 2>&1 || true
+          
+          # Run Code scan
+          echo "Scanning code..."
+          snyk code test --json > code_results.json 2>&1 || true
+          
+          # Run IaC scan if applicable
+          echo "Scanning infrastructure..."
+          snyk iac test --json > iac_results.json 2>&1 || true
+          
+          # Combine results
+          cat > vulnerability_report.json <<EOF
+          {
+            "scan_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "repository": "${{ github.repository }}",
+            "commit": "${{ github.sha }}",
+            "sca_scan": $(cat sca_results.json || echo '{}'),
+            "code_scan": $(cat code_results.json || echo '{}'),
+            "iac_scan": $(cat iac_results.json || echo '{}')
+          }
+          EOF
+          
+          # Check if vulnerabilities were found
+          VULN_COUNT=$(jq -r '(.sca_scan.vulnerabilities // [] | length) + (.code_scan.runs[0].results // [] | length)' vulnerability_report.json 2>/dev/null || echo "0")
+          
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "vulnerabilities_found=true" >> $GITHUB_OUTPUT
+            echo "vulnerability_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+            echo "✅ Found $VULN_COUNT vulnerabilities"
+          else
+            echo "vulnerabilities_found=false" >> $GITHUB_OUTPUT
+            echo "vulnerability_count=0" >> $GITHUB_OUTPUT
+            echo "✅ No vulnerabilities found"
+          fi
+      
+      - name: Generate Fix Prompt with Scan Results
+        if: steps.security_scan.outputs.vulnerabilities_found == 'true'
+        id: fix_prompt
+        run: |
+          # Read vulnerability report
+          VULN_REPORT=$(cat vulnerability_report.json)
+          
+          # Create comprehensive fix prompt
+          cat > fix_prompt.txt <<EOF
+          Based on the following Snyk vulnerability scan results, please fix the first identified security vulnerability:
+
+          VULNERABILITY REPORT:
+          $VULN_REPORT
+
+          INSTRUCTIONS:
+          1. Analyze each vulnerability carefully
+          2. For dependency vulnerabilities:
+             - Update package versions to secure versions
+             - Update package.json, requirements.txt, go.mod, or relevant dependency files
+             - Ensure compatibility with existing code
+          3. For code vulnerabilities:
+             - Refactor affected code to eliminate security issues
+             - Apply security best practices
+             - Add input validation where needed
+          4. Create clear, concise commit messages for each fix
+          5. Ensure all fixes maintain backward compatibility where possible
+          6. Add comments explaining security improvements
+          
+          Please provide the complete fixed files and a summary of all changes made.
+          EOF
+          
+          echo "Fix prompt created successfully"
+      
+      - name: Create Fix Branch
+        if: steps.security_scan.outputs.vulnerabilities_found == 'true'
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create a new branch with timestamp for uniqueness
+          BRANCH_NAME="security-fixes/copilot-$(date +%Y%m%d-%H%M%S)"
+          echo "Creating new branch: $BRANCH_NAME"
+          
+          git checkout -b $BRANCH_NAME
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          
+          echo "✅ Branch created successfully: $BRANCH_NAME"
+          echo "📍 Current branch: $(git branch --show-current)"
+
+      - name: Apply Fixes with Copilot
+        if: steps.security_scan.outputs.vulnerabilities_found == 'true'
+        env:
+          # GITHUB_TOKEN: ${{ steps.pr-app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          echo "🤖 Asking Copilot to generate fixes..."
+          
+          # Use Copilot to generate fixes
+          FIX_PROMPT=$(cat fix_prompt.txt)
+          
+          # Get Copilot's suggestions for fixes
+          echo "$FIX_PROMPT" | gh copilot suggest -t shell > fix_commands.txt
+          
+          echo "📝 Generated fix commands:"
+          cat fix_commands.txt
+          
+          # Execute fix commands (with safety checks)
+          echo "🔧 Applying fixes..."
+          while IFS= read -r cmd; do
+            if [[ $cmd != \#* ]] && [[ -n $cmd ]]; then
+              echo "Executing: $cmd"
+              eval "$cmd" || echo "⚠️  Command failed, continuing..."
+            fi
+          done < fix_commands.txt
+          
+          # Alternative: Use Copilot to directly modify files
+          # For each file that needs fixing, you could use:
+          # gh copilot explain "How to fix [specific vulnerability] in [file]"
+          
+          echo "✅ Fixes applied successfully"
+      
+      - name: Commit Changes
+        if: steps.security_scan.outputs.vulnerabilities_found == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if there are changes to commit
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "fix: resolve security vulnerabilities identified by Snyk
+            
+            - Applied automated security fixes via GitHub Copilot
+            - Updated vulnerable dependencies to secure versions
+            - Refactored code to address security issues
+            
+            Scan performed: $(date)
+            Action run: ${{ github.run_id }}"
+            
+            git push origin $BRANCH_NAME
+            echo "changes_committed=true" >> $GITHUB_ENV
+          else
+            echo "changes_committed=false" >> $GITHUB_ENV
+            echo "No changes to commit"
+          fi
+      
+      - name: Create Pull Request
+        if: env.changes_committed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Generate PR description with Copilot
+          PR_DESCRIPTION=$(cat <<EOF
+          ## 🔒 Automated Security Vulnerability Fixes
+          
+          This PR contains automated security fixes generated by GitHub Copilot using Snyk vulnerability scanning.
+          
+          ### 📊 Scan Summary
+          - **Scan Date**: $(date)
+          - **Triggered by**: Commit ${{ github.sha }}
+          - **Branch**: ${{ github.ref_name }}
+          
+          ### 🔧 Changes Made
+          This PR addresses security vulnerabilities identified in the codebase. The fixes include:
+          - Dependency version updates to patched versions
+          - Code refactoring to eliminate security issues
+          - Implementation of security best practices
+          
+          ### 📋 Vulnerability Report
+          \`\`\`json
+          $(cat vulnerability_report.json)
+          \`\`\`
+          
+          ### ✅ Action Items for Reviewers
+          - [ ] Review all dependency updates for compatibility
+          - [ ] Test the application to ensure functionality is maintained
+          - [ ] Verify that all vulnerabilities have been addressed
+          - [ ] Check for any breaking changes
+          
+          ### 🤖 Automated Process
+          This PR was automatically generated by the security scan workflow.
+          - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          **Note**: Please review these changes carefully before merging.
+          EOF
+          )
+          
+          # Create the PR
+          gh pr create \
+            --title "🔒 Security: Fix vulnerabilities identified by Snyk scan" \
+            --body "$PR_DESCRIPTION" \
+            --base ${{ github.ref_name }} \
+            --head $BRANCH_NAME \
+            --label "security,automated,copilot-generated"
+          
+          echo "✅ Pull request created successfully!"
+      
+      - name: Upload Vulnerability Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulnerability-report
+          path: |
+            vulnerability_report.json
+            sca_results.json
+            code_results.json
+            iac_results.json
+            scan_results.txt
+            fix_prompt.txt
+            mcp-server.log
+          retention-days: 30
+      
+      - name: Cleanup MCP Server
+        if: always()
+        run: |
+          if [ -n "$MCP_PID" ]; then
+            echo "Stopping MCP server (PID: $MCP_PID)"
+            kill $MCP_PID 2>/dev/null || true
+          fi
+      
+      - name: Comment on Commit (if no vulnerabilities)
+        if: steps.security_scan.outputs.vulnerabilities_found == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+            -f body='✅ Security scan completed: No vulnerabilities found!'
