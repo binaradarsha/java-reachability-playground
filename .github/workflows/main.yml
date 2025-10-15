@@ -185,7 +185,7 @@ jobs:
           
           # Create comprehensive fix prompt
           cat > fix_prompt.txt <<EOF
-          Based on the following Snyk vulnerability scan results, please fix only the first one out of identified security vulnerabilities:
+          Based on the following Snyk vulnerability scan results, please fix only first three out of identified security vulnerabilities:
 
           VULNERABILITY REPORT:
           $VULN_REPORT
