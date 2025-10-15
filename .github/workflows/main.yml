@@ -101,7 +101,7 @@ jobs:
 
       - name: Authenticate GitHub CLI for Copilot
         env:
-          GH_TOKEN: ${{ secrets.PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "${{ secrets.PAT }}" | gh auth login --with-token
@@ -231,8 +231,8 @@ jobs:
         if: steps.security_scan.outputs.vulnerabilities_found == 'true'
         env:
           # GITHUB_TOKEN: ${{ steps.pr-app-token.outputs.token }}
-          GITHUB_TOKEN: ${{ secrets.PAT }}
-          GH_TOKEN: ${{ secrets.PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🤖 Asking Copilot to generate fixes..."
           
