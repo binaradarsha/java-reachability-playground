@@ -255,13 +255,46 @@ jobs:
           # Read the prompt from file and pipe it to gh copilot
           # This avoids "Argument list too long" error
           
-          # Get Copilot's suggestions for fixes using non-interactive mode
-          cat fix_prompt.txt | timeout 30 gh copilot suggest -t shell > fix_commands.txt 2>&1 || true
+          # Detect project language for code-level fixes
+          if [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+            PROJECT_LANG="Java"
+            CODE_FILES="*.java"
+          elif [ -f "package.json" ]; then
+            PROJECT_LANG="JavaScript/TypeScript"
+            CODE_FILES="*.js *.ts"
+          elif [ -f "requirements.txt" ] || [ -f "setup.py" ]; then
+            PROJECT_LANG="Python"
+            CODE_FILES="*.py"
+          elif [ -f "go.mod" ]; then
+            PROJECT_LANG="Go"
+            CODE_FILES="*.go"
+          else
+            PROJECT_LANG="unknown"
+            CODE_FILES="*"
+          fi
           
-          # If the output is empty or contains errors, try with a simpler prompt
+          echo "Detected project language: $PROJECT_LANG"
+          
+          # Get Copilot's suggestions for fixes using non-interactive mode with higher timeout
+          cat fix_prompt.txt | timeout 120 gh copilot suggest -t shell > fix_commands.txt 2>&1 || true
+          
+          # If the output is empty or contains errors, try with a language-specific simplified prompt
           if [ ! -s fix_commands.txt ] || grep -q "error" fix_commands.txt; then
             echo "⚠️  First attempt failed, trying with simplified prompt..."
-            echo "How to fix the first security vulnerability found in this repository by updating dependency files or source code" | timeout 30 gh copilot suggest -t shell > fix_commands.txt 2>&1 || true
+            echo "How to fix the first security vulnerability in this $PROJECT_LANG repository by updating dependency files or modifying $PROJECT_LANG source code files" | timeout 120 gh copilot suggest -t shell > fix_commands.txt 2>&1 || true
+          fi
+          
+          # If still failing, try to get code suggestions directly
+          if [ ! -s fix_commands.txt ] || grep -q "error" fix_commands.txt; then
+            echo "⚠️  Shell command generation failed, trying code explanation approach..."
+            echo "Explain how to fix security vulnerabilities in $PROJECT_LANG code" | timeout 120 gh copilot explain > fix_explanation.txt 2>&1 || true
+            
+            # Convert explanation to actionable commands
+            if [ -s fix_explanation.txt ]; then
+              echo "# Generated from Copilot explanation:" > fix_commands.txt
+              echo "# See fix_explanation.txt for details" >> fix_commands.txt
+              echo "echo 'Review fix_explanation.txt for manual code changes'" >> fix_commands.txt
+            fi
           fi
           
           echo "📝 Generated fix commands:"
